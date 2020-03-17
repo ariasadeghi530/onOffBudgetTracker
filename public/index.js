@@ -78,6 +78,47 @@ function populateChart() {
   });
 }
 
+// added indexedDB to maintain transactions if connection lost
+let db;
+
+const request = indexedDB.open('transaction', 1);
+
+//check db if any transaction
+const checkDatabase = () => {
+  const transaction = db.transaction(['trans'], 'readwrite');
+  const store = transaction.objectStore('trans');
+  const getAll = store.getAll();
+
+  //if there are, post them to database
+  getAll.onsuccess = () => {
+    if(getAll.result.length > 0) {
+      for(let i = 0; i < getAll.result.length; ++i){
+      fetch('/api/transaction', {
+        method: "POST",
+        body: JSON.stringify(getAll.result[i].tran),
+        headers: {
+          Accept: "application/json, text/plain, */*",
+          "Content-Type": "application/json"
+        }
+      })
+      //clear out indexedDB after done
+      .then( ()=> {
+        const transact = db.transaction(['trans'], 'readwrite');
+        const store = transact.objectStore('trans');
+        store.clear()
+      })
+      .catch( e => console.error(e))       
+    }
+    }
+  }
+}
+
+function saveRecord(tran){
+  const transaction = db.transaction(['trans'], 'readwrite');
+  const store = transaction.objectStore('trans');
+  store.add({tran});
+}
+
 function sendTransaction(isAdding) {
   let nameEl = document.querySelector("#t-name");
   let amountEl = document.querySelector("#t-amount");
@@ -144,6 +185,21 @@ function sendTransaction(isAdding) {
   });
 }
 
+// if there is no indexedDB create it
+request.onupgradeneeded = (event) => {
+  const db = event.target.result;
+
+  db.createObjectStore('trans', {autoIncrement: true});
+}
+// if back online, check indexedDb and add transactions to db
+request.onsuccess = (event) =>{
+  db = event.target.result;
+
+  if(navigator.onLine){
+    checkDatabase;
+  }
+}
+
 document.querySelector("#add-btn").onclick = function() {
   sendTransaction(true);
 };
@@ -151,3 +207,6 @@ document.querySelector("#add-btn").onclick = function() {
 document.querySelector("#sub-btn").onclick = function() {
   sendTransaction(false);
 };
+
+//if back online check db
+window.addEventListener('online', checkDatabase);
